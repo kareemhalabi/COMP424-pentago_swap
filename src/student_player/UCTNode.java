@@ -7,14 +7,10 @@ import pentago_swap.PentagoMove;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.Random;
 
 class UCTNode {
 
-	// Create a random number generator for the class
-	private static Random rng = new Random();
-
-	private double winScore;
+	private int winScore;
 	private int numSims;
 
 	//TODO might only store moves and not states at each step (space/memory tradeoff)
@@ -26,8 +22,6 @@ class UCTNode {
 	private static final double EXPLOITATION_PARAM = Math.sqrt(2);
 
 	UCTNode(PentagoBoardState state, PentagoMove move) {
-		numSims = 0;
-		winScore = 0;
 		this.state = state;
 		this.move = move;
 		this.children = new ArrayList<>();
@@ -40,9 +34,9 @@ class UCTNode {
 			currentNode.numSims++;
 			// Board always toggles to opponent after the end of the game
 			if(currentNode.getState().getOpponent() == winner)
-				currentNode.winScore += 1;
+				currentNode.winScore += 2;
 			else if(winner == Board.DRAW)
-				currentNode.winScore += 0.5;
+				currentNode.winScore += 1;
 
 			currentNode = currentNode.parent;
 		}
@@ -61,7 +55,7 @@ class UCTNode {
 	}
 
 	UCTNode getRandomChild() {
-		return children.get(rng.nextInt(children.size()));
+		return children.get(StudentPlayer.rng.nextInt(children.size()));
 	}
 
 	UCTNode getMaxSimsChild() {

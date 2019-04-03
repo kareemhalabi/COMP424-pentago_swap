@@ -8,14 +8,17 @@ import pentago_swap.PentagoPlayer;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.Random;
+
+import static student_player.MyTools.efficientGetRandomMove;
 
 /** A player file submitted by a student. */
 public class StudentPlayer extends PentagoPlayer {
 
-    private boolean firstMove = true;
+	// Create a single random number generator for the program
+	static Random rng = new Random();
 
-    private final int FIRST_MOVE_TIMEOUT = 30000;
-    private final int TIMEOUT = 2000;
+    private static final int TIMEOUT = 2000;
 
 
     /**
@@ -37,10 +40,7 @@ public class StudentPlayer extends PentagoPlayer {
 
     	// ----------- Setup -----------
     	long startTime = System.currentTimeMillis();
-    	long endTime = firstMove ? startTime + TIMEOUT - 300 : startTime + TIMEOUT - 300; //TODO Change back to StartTimeout
-    	if(firstMove) firstMove = false;
-
-    	System.gc(); // Might help with the random timeouts
+    	long endTime = startTime + TIMEOUT - 400;
 
     	UCTNode root = new UCTNode(boardState, null);
 
@@ -71,7 +71,7 @@ public class StudentPlayer extends PentagoPlayer {
 
 		PentagoBoardState state = (PentagoBoardState) start.getState().clone();
 		while(!state.gameOver()) {
-			state.processMove((PentagoMove) state.getRandomMove());
+			state.processMove(efficientGetRandomMove(state));
 		}
 		return state.getWinner();
 	}
