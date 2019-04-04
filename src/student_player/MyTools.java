@@ -17,7 +17,7 @@ class MyTools {
      * @param state current state of the game
      * @return a random legal move to play
      */
-    public static PentagoMove efficientGetRandomMove(PentagoBoardState state) {
+    static PentagoMove efficientGetRandomMove(PentagoBoardState state) {
 
         // Find a random placement
         PentagoCoord randomPlacement;

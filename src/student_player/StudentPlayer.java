@@ -40,16 +40,16 @@ public class StudentPlayer extends PentagoPlayer {
 
     	// ----------- Setup -----------
     	long startTime = System.currentTimeMillis();
-    	long endTime = startTime + TIMEOUT - 400;
+    	long endTime = startTime + TIMEOUT - 600;
 
-    	UCTNode root = new UCTNode(boardState, null);
+    	UCTNode root = new UCTNode(null);
 
 		while (System.currentTimeMillis() < endTime) {
 			//----------- Descent (and Growth) phase -----------
 			UCTNode promisingNode = selectPromisingNode(root);
 
-			if(!promisingNode.getState().gameOver()) {
-				expandNode(promisingNode);
+			if(!promisingNode.getState(boardState).gameOver()) {
+				expandNode(promisingNode, boardState);
 			}
 
 			//----------- Rollout phase -----------
@@ -57,7 +57,7 @@ public class StudentPlayer extends PentagoPlayer {
 			if(promisingNode.getChildren().size() > 0) {
 				nodeToExplore = promisingNode.getRandomChild();
 			}
-			int result = simulateRandomPlayout(nodeToExplore);
+			int[] result = simulateRandomPlayout(nodeToExplore, boardState);
 
 			//----------- Update phase -----------
 			nodeToExplore.backPropagate(result);
@@ -67,13 +67,14 @@ public class StudentPlayer extends PentagoPlayer {
 		return finalSelection.getMove();
     }
 
-	private int simulateRandomPlayout(UCTNode start) {
+	private int[] simulateRandomPlayout(UCTNode start, PentagoBoardState startState) {
 
-		PentagoBoardState state = (PentagoBoardState) start.getState().clone();
+		PentagoBoardState state = start.getState(startState);
 		while(!state.gameOver()) {
 			state.processMove(efficientGetRandomMove(state));
 		}
-		return state.getWinner();
+		// Returns who won and who was last to play
+		return new int[] {state.getWinner(), state.getOpponent()};
 	}
 
 	private UCTNode selectPromisingNode(UCTNode root) {
@@ -84,12 +85,8 @@ public class StudentPlayer extends PentagoPlayer {
     	return currentNode;
 	}
 
-	private void expandNode(UCTNode growthNode) {
-		ArrayList<PentagoMove> availableMoves = growthNode.getState().getAllLegalMoves();
-		availableMoves.forEach(move -> {
-			PentagoBoardState nextState = (PentagoBoardState)growthNode.getState().clone();
-			nextState.processMove(move);
-			growthNode.addChild(new UCTNode(nextState, move));
-		});
+	private void expandNode(UCTNode growthNode, PentagoBoardState startState) {
+		ArrayList<PentagoMove> availableMoves = growthNode.getState(startState).getAllLegalMoves();
+		availableMoves.forEach(move -> growthNode.addChild(new UCTNode(move)));
 	}
 }
