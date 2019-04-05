@@ -48,8 +48,9 @@ public class StudentPlayer extends PentagoPlayer {
 			//----------- Descent (and Growth) phase -----------
 			UCTNode promisingNode = selectPromisingNode(root);
 
-			if(!promisingNode.getState(boardState).gameOver()) {
-				expandNode(promisingNode, boardState);
+			PentagoBoardState promisingState = promisingNode.getState(boardState);
+			if(!promisingState.gameOver()) {
+				expandNode(promisingNode, promisingState);
 			}
 
 			//----------- Rollout phase -----------
@@ -85,8 +86,8 @@ public class StudentPlayer extends PentagoPlayer {
     	return currentNode;
 	}
 
-	private void expandNode(UCTNode growthNode, PentagoBoardState startState) {
-		ArrayList<PentagoMove> availableMoves = growthNode.getState(startState).getAllLegalMoves();
+	private void expandNode(UCTNode growthNode, PentagoBoardState baseState) {
+		ArrayList<PentagoMove> availableMoves = baseState.getAllLegalMoves();
 		availableMoves.forEach(move -> growthNode.addChild(new UCTNode(move)));
 	}
 }
