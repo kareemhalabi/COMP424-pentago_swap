@@ -1,9 +1,5 @@
 package student_player;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
-
 import static student_player.PentagoBitBoard.DRAW;
 
 class UCTNode {
@@ -15,7 +11,7 @@ class UCTNode {
 	private PentagoBitBoard bitBoard;
 
 	private UCTNode parent;
-	private ArrayList<UCTNode> children;
+	private UCTNode[] children;
 
 	private static final double EXPLOITATION_PARAM = Math.sqrt(2);
 
@@ -55,22 +51,32 @@ class UCTNode {
 	}
 
 	public boolean hasChildren() {
-		return !(this.children == null || this.children.isEmpty());
+		return !(this.children == null || this.children.length == 0);
 	}
 
-	ArrayList<UCTNode> getChildren() {
+	UCTNode[] getChildren() {
 		return children;
 	}
 
 	UCTNode getRandomChild() {
-		return children.get(StudentPlayer.rng.nextInt(children.size()));
+		return children[StudentPlayer.rng.nextInt(children.length)];
 	}
 
 	UCTNode getMaxSimsChild() {
-		return Collections.max(this.children, Comparator.comparing(c -> c.numSims));
+		int maxSims = Integer.MIN_VALUE;
+		int maxIndex = -1;
+
+		for(int i = 0; i < this.children.length; i++) {
+			if(this.children[i].numSims > maxSims) {
+				maxSims = this.children[i].numSims;
+				maxIndex = i;
+			}
+		}
+
+		return this.children[maxIndex];
 	}
 
-	public void setChildren(ArrayList<UCTNode> children) {
+	public void setChildren(UCTNode[] children) {
 		this.children = children;
 	}
 

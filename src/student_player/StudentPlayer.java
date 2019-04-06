@@ -4,9 +4,6 @@ import boardgame.Move;
 import pentago_swap.PentagoBoardState;
 import pentago_swap.PentagoPlayer;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
 import java.util.Random;
 
 import static student_player.PentagoBitBoard.longToPentagoMove;
@@ -17,7 +14,7 @@ public class StudentPlayer extends PentagoPlayer {
 	// Create a single random number generator for the program
 	static Random rng = new Random();
 
-    private static final int TIMEOUT = 2000;
+    private static final int TIMEOUT = 1500;
 
 
     /**
@@ -39,7 +36,7 @@ public class StudentPlayer extends PentagoPlayer {
 
     	// ----------- Setup -----------
     	long startTime = System.currentTimeMillis();
-    	long endTime = startTime + TIMEOUT - 600;
+    	long endTime = startTime + TIMEOUT;
 
     	PentagoBitBoard bitBoardState = new PentagoBitBoard(boardState);
 
@@ -47,7 +44,7 @@ public class StudentPlayer extends PentagoPlayer {
 
 		while (System.currentTimeMillis() < endTime) {
 			//----------- Descent (and Growth) phase -----------
-			UCTNode promisingNode = selectPromisingNode(root); //TODO this step causes timeouts
+			UCTNode promisingNode = selectPromisingNode(root);
 
 			PentagoBitBoard promisingState = promisingNode.getState();
 			if(!promisingState.gameOver()) {
@@ -81,21 +78,33 @@ public class StudentPlayer extends PentagoPlayer {
 
 	private UCTNode selectPromisingNode(UCTNode root) {
     	UCTNode currentNode = root;
-    	while(currentNode.hasChildren()) {
-			currentNode = Collections.max(currentNode.getChildren(), Comparator.comparing(UCTNode::getStateValue));
+
+    	while (currentNode.hasChildren()) {
+			double maxValue = Double.MIN_VALUE;
+			int maxIndex = -1;
+
+			for(int i = 0; i < currentNode.getChildren().length; i++) {
+				double value = currentNode.getChildren()[i].getStateValue();
+				if(value > maxValue) {
+					maxValue = value;
+					maxIndex = i;
+				}
+			}
+
+			currentNode = currentNode.getChildren()[maxIndex];
 		}
     	return currentNode;
 	}
 
 	private void expandNode(UCTNode growthNode) {
 		long[] availableMoves = growthNode.getState().getAllLegalMoves();
-		ArrayList<UCTNode> children = new ArrayList<>(availableMoves.length);
-		for(long move : availableMoves) {
+		UCTNode[] children = new UCTNode[availableMoves.length];
+		for(int i = 0; i < availableMoves.length; i++) {
 			PentagoBitBoard newState = (PentagoBitBoard) growthNode.getState().clone();
-			newState.processMove(move);
-			UCTNode child = new UCTNode(newState, move);
+			newState.processMove(availableMoves[i]);
+			UCTNode child = new UCTNode(newState, availableMoves[i]);
 			child.setParent(growthNode);
-			children.add(child);
+			children[i] = child;
 		}
 		growthNode.setChildren(children);
 	}
