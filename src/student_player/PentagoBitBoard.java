@@ -4,6 +4,8 @@ import boardgame.Board;
 import pentago_swap.PentagoBoardState;
 import pentago_swap.PentagoMove;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Scanner;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -13,6 +15,7 @@ public class PentagoBitBoard {
 
 	private static final int NUM_QUADS = 4;
 	private static final int MAX_TURNS = 36;
+	private static final int QUAD_SIZE = 3;
 
 	// Supposedly faster than java.util.Random
 	// https://lemire.me/blog/2016/02/01/default-random-number-generators-are-slow/
@@ -81,7 +84,8 @@ public class PentagoBitBoard {
 	private static final int[][] quadrantBitShifts = {
 		{-1, 3, 18, 21},  // From Quad 0 -> Quad 1 is 3 bits, Quad 0 -> Quad 2 is 18 bits and Quad 0 -> Quad 3 is 21 bits
 		{-1,-1, 15, 18},  // From Quad 1 -> Quad 2 is 15 bits, Quad 1 -> Quad 3 is 18 bits
-		{-1,-1,-1, 3}     // From Quad 2 -> Quad 3 is 3 bits
+		{-1,-1,-1, 3},    // From Quad 2 -> Quad 3 is 3 bits
+		{-1,-1,-1, 0}     // From Quad 3 -> Quad 3 is 0 bits (not used as an actual swap since it would be invalid)
 	};
 
 	PentagoBitBoard(PentagoBoardState board) {
@@ -119,11 +123,9 @@ public class PentagoBitBoard {
 		}
 	}
 
-	PentagoBitBoard() {
+	private PentagoBitBoard() {
 		this.pieces = new long[2];
 		this.winner = NOBODY;
-		this.turnPlayer = WHITE;
-		this.turnNumber = 0;
 	}
 
 	// For Cloning
@@ -158,35 +160,145 @@ public class PentagoBitBoard {
 	 * 	     ----------------------------------------------------------------------
 	 *       |.......................|p|sq|lq|cccccccccccccccccccccccccccccccccccc|
 	 *
+	 * 	Note that sq must be less than lq
+	 *
 	 * @return All legal moves as longs
 	 */
+	private ArrayList<Long> getAllLegalMoves(long availableSpots, byte[][] quadrantSwaps, int intialSize) {
 
-	public long[] getAllLegalMoves() {
-
-		// Number of possible moves is the number of blank spots on the board times
-		// six possible non-symmetric swaps
-		int numPlacements = (BOARD_SIZE*BOARD_SIZE - turnNumber);
-		int numSwaps = 6;
-
-		long[] moves = new long[numPlacements * numSwaps];
-		int moveIndex = 0;
-
-		long availableSpots = ~(this.pieces[WHITE] | this.pieces[BLACK]);
+		ArrayList<Long> moves = new ArrayList<>(intialSize);
 
 		long mask = 1;
-
-		for(int i = 0; i < BOARD_SIZE*BOARD_SIZE; i++) {
+		for(int i = 0; i < BOARD_SIZE * BOARD_SIZE; i++) {
 			if((availableSpots & mask) == mask) {
-				for(int smallerQuad = 0; smallerQuad < NUM_QUADS - 1; smallerQuad++) {
-					for(int largerQuad = smallerQuad + 1; largerQuad < NUM_QUADS; largerQuad++) {
-						moves[moveIndex++] = ((((((long)turnPlayer << 2) | smallerQuad) << 2) | largerQuad) << 36) | mask;
-					}
+				for(byte[] quadrantSwap : quadrantSwaps) {
+					moves.add((((((((long)turnPlayer << 2) | quadrantSwap[0]) << 2) | quadrantSwap[1]) << 36) | mask));
 				}
 			}
 			mask = mask << 1;
 		}
 
 		return moves;
+	}
+
+	public ArrayList<Long> getAllLegalNonSymmetricMoves() {
+
+		ArrayList<ArrayList<Byte>> equalQuadrants = partitionQuadrants();
+
+		ArrayList<Long> moves;
+
+		byte[][] swaps = {{0, 1}, {0, 2}, {0, 3}, {1, 2}, {1, 3}, {2, 3}};
+		long placements = ~(this.pieces[WHITE] | this.pieces[BLACK]);
+		int initialCapacity = ((BOARD_SIZE * BOARD_SIZE) - this.turnNumber) * swaps.length;
+
+		switch (equalQuadrants.size()) {
+
+			case 1:
+				// 4 identical quadrants (Q0=Q1=Q2=Q3):
+				// Try a move for each free spot in Q0 and just swap Q1 -> Q2
+
+				byte Q0 = equalQuadrants.get(0).get(0);
+
+				placements = placements & quadrantMasks[Q0];
+				swaps = new byte[][]{{1, 2}};
+				initialCapacity = (QUAD_SIZE * QUAD_SIZE) * swaps.length;
+
+				moves = getAllLegalMoves(placements, swaps, initialCapacity);
+				break;
+
+			case 2:
+				// 2 pairs of identical quadrants (Q0=Q2, Q1=Q3):
+				// Try a move for each free spot in Q0 and Q1 and do all the swaps
+				if (equalQuadrants.get(0).size() == 2) {
+
+					Q0 = equalQuadrants.get(0).get(0);
+					byte Q1 = equalQuadrants.get(1).get(0);
+
+					placements = placements & (quadrantMasks[Q0] | quadrantMasks[Q1]);
+					initialCapacity = (QUAD_SIZE * QUAD_SIZE) * 2 * swaps.length;
+
+					moves = getAllLegalMoves(placements, swaps, initialCapacity);
+				}
+				// 1 unique, 3 identical quadrants(Q0, Q1=Q2=Q3):
+				// Try a move for each free spot in Q0 and do a swap for Q0 -> Q1, Q0 -> Q2, Q0 -> Q2, Q1 -> Q2
+				// Try a move for each free spot in Q1 and do all the swaps
+				else {
+
+					ArrayList<Byte> uniqueQuadrant = equalQuadrants.get(0).size() < equalQuadrants.get(1).size() ? equalQuadrants.get(0) : equalQuadrants.get(1);
+					ArrayList<Byte> identicalQuadrants = equalQuadrants.get(0).size() > equalQuadrants.get(1).size() ? equalQuadrants.get(0) : equalQuadrants.get(1);
+
+					long placementsQ0 = placements & quadrantMasks[uniqueQuadrant.get(0)];
+					byte[][] swapsQ0 = new byte[4][2];
+					int initialCapacityQ0 = (QUAD_SIZE * QUAD_SIZE) * swaps.length;
+
+					Q0 = equalQuadrants.get(0).get(0);
+
+					// Generate first 3 swaps
+					for(int i = 0; i < identicalQuadrants.size(); i++) {
+						byte quadrant = identicalQuadrants.get(i);
+						byte largerQuadrant = quadrant > Q0 ? quadrant : Q0;
+						byte smallerQuadrant = quadrant < Q0 ? quadrant : Q0;
+						swapsQ0[i][0] = smallerQuadrant;
+						swapsQ0[i][1] = largerQuadrant;
+					}
+
+					// Generate last swap
+					byte largerQuadrant = identicalQuadrants.get(0) > identicalQuadrants.get(1) ? identicalQuadrants.get(0) : identicalQuadrants.get(1);
+					byte smallerQuadrant = identicalQuadrants.get(0) < identicalQuadrants.get(1) ? identicalQuadrants.get(0) : identicalQuadrants.get(1);
+					swapsQ0[swapsQ0.length-1][0] = smallerQuadrant;
+					swapsQ0[swapsQ0.length-1][1] = largerQuadrant;
+
+					moves = getAllLegalMoves(placementsQ0, swapsQ0, initialCapacityQ0);
+
+					long placementsQ1 = placements & quadrantMasks[identicalQuadrants.get(0)];
+					byte[][] swapsQ1 = swaps;
+					int initialCapacityQ1 = (QUAD_SIZE * QUAD_SIZE) * swapsQ1.length;
+
+					moves.addAll(getAllLegalMoves(placementsQ1, swapsQ1, initialCapacityQ1));
+				}
+
+				break;
+
+			// Default is no identical pairs of quadrants: return all legal moves as usual
+			default:
+				moves = getAllLegalMoves(placements, swaps, initialCapacity);
+				break;
+		}
+
+		return moves;
+	}
+
+	private ArrayList<ArrayList<Byte>> partitionQuadrants() {
+
+		// Put each quadrant (the two piece longs) into a list
+		ArrayList<ArrayList<Long>> quadrants = new ArrayList<>(NUM_QUADS);
+
+		for(int i = 0; i < NUM_QUADS; i++) {
+			quadrants.add(new ArrayList<>());
+			for(long pieceLong : this.pieces) {
+				// Shift all quadrants to the same position
+				quadrants.get(i).add(pieceLong >> quadrantBitShifts[i][NUM_QUADS-1]);
+			}
+		}
+
+		// Partition quadrants into buckets where they are equal
+		HashMap<ArrayList<Long>, ArrayList<Byte>> equalQuadrants = new HashMap<>();
+
+		for(byte j = 0; j < NUM_QUADS; j++) {
+
+			// Found a similar quadrant, add quadrant number to the partition
+			if(equalQuadrants.containsKey(quadrants.get(j))) {
+				equalQuadrants.get(quadrants.get(j)).add(j);
+			}
+			// New unique quadrant, create a new partition with the quadrant number
+			else {
+				ArrayList<Byte> newPartition = new ArrayList<>();
+				newPartition.add(j);
+				equalQuadrants.put(quadrants.get(j), newPartition);
+			}
+		}
+
+		return new ArrayList<>(equalQuadrants.values());
 	}
 
 	public long getRandomMove() {
@@ -206,7 +318,6 @@ public class PentagoBitBoard {
 			secondQuad = rand.nextInt(4);
 		} while(firstQuad == secondQuad);
 
-		// From http://www.crazyforcode.com/find-maximum-numbers-if-else/
 		int largerQuad = firstQuad > secondQuad ? firstQuad : secondQuad;
 		int smallerQuad = firstQuad < secondQuad ? firstQuad : secondQuad;
 

@@ -4,6 +4,7 @@ import boardgame.Move;
 import pentago_swap.PentagoBoardState;
 import pentago_swap.PentagoPlayer;
 
+import java.util.ArrayList;
 import java.util.Random;
 
 import static student_player.PentagoBitBoard.longToPentagoMove;
@@ -97,12 +98,12 @@ public class StudentPlayer extends PentagoPlayer {
 	}
 
 	private void expandNode(UCTNode growthNode) {
-		long[] availableMoves = growthNode.getState().getAllLegalMoves();
-		UCTNode[] children = new UCTNode[availableMoves.length];
-		for(int i = 0; i < availableMoves.length; i++) {
+		ArrayList<Long> availableMoves = growthNode.getState().getAllLegalNonSymmetricMoves();
+		UCTNode[] children = new UCTNode[availableMoves.size()];
+		for(int i = 0; i < availableMoves.size(); i++) {
 			PentagoBitBoard newState = (PentagoBitBoard) growthNode.getState().clone();
-			newState.processMove(availableMoves[i]);
-			UCTNode child = new UCTNode(newState, availableMoves[i]);
+			newState.processMove(availableMoves.get(i));
+			UCTNode child = new UCTNode(newState, availableMoves.get(i));
 			child.setParent(growthNode);
 			children[i] = child;
 		}
