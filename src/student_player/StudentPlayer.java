@@ -2,7 +2,6 @@ package student_player;
 
 import boardgame.Move;
 import pentago_swap.PentagoBoardState;
-import pentago_swap.PentagoMove;
 import pentago_swap.PentagoPlayer;
 
 import java.util.ArrayList;
@@ -10,7 +9,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.Random;
 
-import static student_player.MyTools.efficientGetRandomMove;
+import static student_player.PentagoBitBoard.longToPentagoMove;
 
 /** A player file submitted by a student. */
 public class StudentPlayer extends PentagoPlayer {
@@ -42,52 +41,62 @@ public class StudentPlayer extends PentagoPlayer {
     	long startTime = System.currentTimeMillis();
     	long endTime = startTime + TIMEOUT - 600;
 
-    	UCTNode root = new UCTNode(null);
+    	PentagoBitBoard bitBoardState = new PentagoBitBoard(boardState);
+
+    	UCTNode root = new UCTNode(bitBoardState, 0L);
 
 		while (System.currentTimeMillis() < endTime) {
 			//----------- Descent (and Growth) phase -----------
-			UCTNode promisingNode = selectPromisingNode(root);
+			UCTNode promisingNode = selectPromisingNode(root); //TODO this step causes timeouts
 
-			PentagoBoardState promisingState = promisingNode.getState(boardState);
+			PentagoBitBoard promisingState = promisingNode.getState();
 			if(!promisingState.gameOver()) {
-				expandNode(promisingNode, promisingState);
+				expandNode(promisingNode);
 			}
 
 			//----------- Rollout phase -----------
 			UCTNode nodeToExplore = promisingNode;
-			if(promisingNode.getChildren().size() > 0) {
+			if(promisingNode.hasChildren()) {
 				nodeToExplore = promisingNode.getRandomChild();
 			}
-			int[] result = simulateRandomPlayout(nodeToExplore, boardState);
+			byte[] result = simulateRandomPlayout(nodeToExplore);
 
 			//----------- Update phase -----------
 			nodeToExplore.backPropagate(result);
 		}
 
 		UCTNode finalSelection = root.getMaxSimsChild();
-		return finalSelection.getMove();
+		return longToPentagoMove(finalSelection.getMove());
     }
 
-	private int[] simulateRandomPlayout(UCTNode start, PentagoBoardState startState) {
+	private byte[] simulateRandomPlayout(UCTNode start) {
 
-		PentagoBoardState state = start.getState(startState);
+		PentagoBitBoard state = start.getState();
 		while(!state.gameOver()) {
-			state.processMove(efficientGetRandomMove(state));
+			state.processMove(state.getRandomMove());
 		}
 		// Returns who won and who was last to play
-		return new int[] {state.getWinner(), state.getOpponent()};
+		return new byte[] {state.getWinner(), state.getOpponent()};
 	}
 
 	private UCTNode selectPromisingNode(UCTNode root) {
     	UCTNode currentNode = root;
-    	while(currentNode.getChildren().size() != 0) {
+    	while(currentNode.hasChildren()) {
 			currentNode = Collections.max(currentNode.getChildren(), Comparator.comparing(UCTNode::getStateValue));
 		}
     	return currentNode;
 	}
 
-	private void expandNode(UCTNode growthNode, PentagoBoardState baseState) {
-		ArrayList<PentagoMove> availableMoves = baseState.getAllLegalMoves();
-		availableMoves.forEach(move -> growthNode.addChild(new UCTNode(move)));
+	private void expandNode(UCTNode growthNode) {
+		long[] availableMoves = growthNode.getState().getAllLegalMoves();
+		ArrayList<UCTNode> children = new ArrayList<>(availableMoves.length);
+		for(long move : availableMoves) {
+			PentagoBitBoard newState = (PentagoBitBoard) growthNode.getState().clone();
+			newState.processMove(move);
+			UCTNode child = new UCTNode(newState, move);
+			child.setParent(growthNode);
+			children.add(child);
+		}
+		growthNode.setChildren(children);
 	}
 }
