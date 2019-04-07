@@ -6,6 +6,7 @@ import pentago_swap.PentagoMove;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Scanner;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -343,6 +344,26 @@ public class PentagoBitBoard {
 
 	}
 
+	public void undoMove(long move) {
+
+		//Extract info from move
+		int player = (int) ((move >> 40) & 1);
+		int smallerQuad = (int) ((move >> 38) & 0b11);
+		int largerQuad = (int) ((move >> 36) & 0b11);
+		long coord = move & 0b111111111111111111111111111111111111L;
+
+		// Re-swap the quadrants
+		this.swapQuadrants(smallerQuad, largerQuad);
+
+		// Undo the placement
+		this.pieces[player] = this.pieces[player] & ~coord;
+		this.turnNumber--;
+
+		this.updateWinner();
+
+		this.turnPlayer = (byte) (1 - this.turnPlayer);
+	}
+
 	public void swapQuadrants(int smallerQuad, int largerQuad) {
 
 		for(int i = 0; i < this.pieces.length; i++) {
@@ -432,6 +453,18 @@ public class PentagoBitBoard {
 
 	public byte getOpponent() {
 		return (byte) (1 - this.turnPlayer);
+	}
+
+	public void togglePlayer() {
+		this.turnPlayer = getOpponent();
+	}
+
+	public byte getTurnNumber() {
+		return this.turnNumber;
+	}
+
+	public byte getTurnPlayer() {
+		return this.turnPlayer;
 	}
 
 	@Override

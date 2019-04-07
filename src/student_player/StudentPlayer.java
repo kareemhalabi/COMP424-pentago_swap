@@ -2,6 +2,7 @@ package student_player;
 
 import boardgame.Move;
 import pentago_swap.PentagoBoardState;
+import pentago_swap.PentagoMove;
 import pentago_swap.PentagoPlayer;
 
 import java.util.ArrayList;
@@ -15,7 +16,7 @@ public class StudentPlayer extends PentagoPlayer {
 	// Create a single random number generator for the program
 	static Random rng = new Random();
 
-    private static final int TIMEOUT = 1500;
+    private static final int TIMEOUT = 1400;
 
 
     /**
@@ -41,7 +42,26 @@ public class StudentPlayer extends PentagoPlayer {
 
     	PentagoBitBoard bitBoardState = new PentagoBitBoard(boardState);
 
-    	UCTNode root = new UCTNode(bitBoardState, 0L);
+    	if(bitBoardState.getTurnNumber() >= 7) {
+    		long winningMove = checkOffensiveMove(bitBoardState);
+    		if(winningMove != 0) {
+    			System.out.println("Found a winning move!");
+				return longToPentagoMove(winningMove);
+			}
+    		long defensiveMove = checkDefensiveMove(bitBoardState);
+    		if(defensiveMove != 0) {
+
+    			// TODO find out why some returned moves are illegal
+				PentagoMove potentialDefensiveMove = longToPentagoMove(defensiveMove);
+				if(boardState.isLegal(potentialDefensiveMove)) {
+					System.out.println("Found a defensive move!");
+					return longToPentagoMove(defensiveMove);
+				}
+
+			}
+		}
+
+    	UCTNode root = new UCTNode(0L);
 
 		while (System.currentTimeMillis() < endTime) {
 			//----------- Descent (and Growth) phase -----------
@@ -49,7 +69,7 @@ public class StudentPlayer extends PentagoPlayer {
 
 			PentagoBitBoard promisingState = promisingNode.getState();
 			if(!promisingState.gameOver()) {
-				expandNode(promisingNode);
+				expandNode(promisingNode, promisingState);
 			}
 
 			//----------- Rollout phase -----------
@@ -57,7 +77,8 @@ public class StudentPlayer extends PentagoPlayer {
 			if(promisingNode.hasChildren()) {
 				nodeToExplore = promisingNode.getRandomChild();
 			}
-			byte[] result = simulateRandomPlayout(nodeToExplore);
+			byte[] result = simulateRandomPlayout(nodeToExplore, bitBoardState);
+//			long rolloutTime = System.nanoTime() - currentTime;
 
 			//----------- Update phase -----------
 			nodeToExplore.backPropagate(result);
@@ -67,9 +88,50 @@ public class StudentPlayer extends PentagoPlayer {
 		return longToPentagoMove(finalSelection.getMove());
     }
 
-	private byte[] simulateRandomPlayout(UCTNode start) {
+	private long checkOffensiveMove(PentagoBitBoard bitBoardState) {
 
-		PentagoBitBoard state = start.getState();
+    	PentagoBitBoard bitBoardStateClone = (PentagoBitBoard) bitBoardState.clone();
+
+    	byte player = bitBoardStateClone.getTurnPlayer();
+
+    	for(long move : bitBoardStateClone.getAllLegalNonSymmetricMoves()) {
+			bitBoardStateClone.processMove(move);
+    		if(bitBoardStateClone.getWinner() == player) {
+    			return move;
+			}
+			bitBoardStateClone.undoMove(move);
+		}
+    	// No offensive move found
+    	return 0;
+	}
+
+	private long checkDefensiveMove(PentagoBitBoard bitBoardState) {
+
+		PentagoBitBoard bitBoardStateClone = (PentagoBitBoard) bitBoardState.clone();
+
+		bitBoardStateClone.togglePlayer();
+    	byte opponent = bitBoardStateClone.getTurnPlayer();
+
+    	// Play a random move to toggle to opponent
+		long opponentMove = checkOffensiveMove(bitBoardStateClone);
+		bitBoardStateClone.undoMove(opponentMove);
+		if(opponentMove != 0) {
+			// We'll play what the opponent would have to win
+			long defensiveMove = opponentMove ^ (1L << 40);
+
+			// Double check we don't let opponent win anyway
+			bitBoardStateClone.processMove(defensiveMove);
+			if(bitBoardStateClone.getWinner() != opponent) {
+				return defensiveMove;
+			}
+		}
+		bitBoardStateClone.togglePlayer();
+		return 0;
+	}
+
+	private byte[] simulateRandomPlayout(UCTNode start, PentagoBitBoard startState) {
+
+		PentagoBitBoard state = start.getState(startState);
 		while(!state.gameOver()) {
 			state.processMove(state.getRandomMove());
 		}
@@ -97,13 +159,11 @@ public class StudentPlayer extends PentagoPlayer {
     	return currentNode;
 	}
 
-	private void expandNode(UCTNode growthNode) {
-		ArrayList<Long> availableMoves = growthNode.getState().getAllLegalNonSymmetricMoves();
+	private void expandNode(UCTNode growthNode, PentagoBitBoard startState) {
+		ArrayList<Long> availableMoves = growthNode.getState(startState).getAllLegalNonSymmetricMoves();
 		UCTNode[] children = new UCTNode[availableMoves.size()];
 		for(int i = 0; i < availableMoves.size(); i++) {
-			PentagoBitBoard newState = (PentagoBitBoard) growthNode.getState().clone();
-			newState.processMove(availableMoves.get(i));
-			UCTNode child = new UCTNode(newState, availableMoves.get(i));
+			UCTNode child = new UCTNode(availableMoves.get(i));
 			child.setParent(growthNode);
 			children[i] = child;
 		}

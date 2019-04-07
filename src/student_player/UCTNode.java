@@ -1,5 +1,7 @@
 package student_player;
 
+import java.util.Stack;
+
 import static student_player.PentagoBitBoard.DRAW;
 
 class UCTNode {
@@ -8,15 +10,13 @@ class UCTNode {
 	private int numSims;
 
 	private long move;
-	private PentagoBitBoard bitBoard;
 
 	private UCTNode parent;
 	private UCTNode[] children;
 
 	private static final double EXPLOITATION_PARAM = Math.sqrt(2);
 
-	UCTNode(PentagoBitBoard bitBoard, long move) {
-		this.bitBoard = bitBoard;
+	UCTNode(long move) {
 		this.move = move;
 	}
 
@@ -81,8 +81,26 @@ class UCTNode {
 	}
 
 
-	public PentagoBitBoard getState() {
-		return bitBoard;
+	public PentagoBitBoard getState(PentagoBitBoard startState) {
+
+		// If we are at the root, game state is unchanged
+		if(this.move == 0) return startState;
+
+		// Get the chain of moves from the parent to this move
+		Stack<Long> moveStack = new Stack<>();
+		UCTNode currentNode = this;
+		while(currentNode != null && currentNode.move != 0) {
+			moveStack.push(currentNode.move);
+			currentNode = currentNode.parent;
+		}
+
+		// Apply the moves
+		PentagoBitBoard endState = (PentagoBitBoard) startState.clone();
+		while(!moveStack.isEmpty()) {
+			endState.processMove(moveStack.pop());
+		}
+
+		return endState;
 	}
 
 	public long getMove() {
