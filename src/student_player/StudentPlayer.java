@@ -44,7 +44,7 @@ public class StudentPlayer extends PentagoPlayer {
 
     	//------------ Static Strategies ------------
 
-    	// Some pre-MCTS move checks when a win/loss becomes possible
+    	// Checks when a win/loss becomes possible
     	if(bitBoardState.getTurnNumber() >= 7) {
     		// If there is a next move that guarantees a move, ignore MCTS and play it
     		long winningMove = StaticStrategies.checkOffensiveMove(bitBoardState);
@@ -62,14 +62,24 @@ public class StudentPlayer extends PentagoPlayer {
 			}
 		}
 
+    	// Towards beginning occupy as many centers as possible
+		if(bitBoardState.getTurnNumber() < 7) {
+			long centerMove = StaticStrategies.checkCenterPlacement(bitBoardState);
+			if(centerMove != 0) {
+				System.out.println("Found a center placement!");
+				return longToPentagoMove(centerMove);
+			}
+		}
+
     	//------------ Begin MCTS ------------
 
     	UCTNode root = new UCTNode(0L);
 
 		while (System.currentTimeMillis() < endTime) {
-			//----------- Descent (and Growth) phase -----------
+			//----------- Descent phase -----------
 			UCTNode promisingNode = selectPromisingNode(root);
 
+			//----------- Growth phase ------------
 			PentagoBitBoard promisingState = promisingNode.getState(bitBoardState);
 			if(!promisingState.gameOver()) {
 				expandNode(promisingNode, promisingState);

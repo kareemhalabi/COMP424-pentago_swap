@@ -1,9 +1,14 @@
 package student_player;
 
+import java.util.ArrayList;
+
+import static pentago_swap.PentagoBoardState.BLACK;
+import static pentago_swap.PentagoBoardState.WHITE;
 import static student_player.PentagoBitBoard.QUAD_SWAPS;
+import static student_player.StudentPlayer.rng;
 
 /**
- * This class contains static strategies that are applied
+ * This class contains static strategies that are applied before MCTS
  */
 class StaticStrategies {
 
@@ -69,4 +74,30 @@ class StaticStrategies {
 		// No defensive move found
 		return 0;
 	}
+
+	/**
+	 * There are 3 times more winning configurations that contain a quadrant center piece than any other edge or corner
+	 * piece. Thus towards the beginning of the game, it can be advantageous to occupy them before the opponent does
+	 *
+	 * @param bitBoardState current state of the game
+	 * @return a center placement with a random swap if avaialble, 0 otherwise
+	 */
+	static long checkCenterPlacement(PentagoBitBoard bitBoardState) {
+
+		long centerMask = 0b000000010010000000000000010010000000L;
+		long[] pieces = bitBoardState.getPieces();
+		long availableMask = ~(pieces[WHITE] | pieces[BLACK]) & centerMask;
+
+		// Check if we can place a move on a center piece
+		ArrayList<Long> centerMoves = bitBoardState.getAllLegalMoves(availableMask, QUAD_SWAPS, 4 * QUAD_SWAPS.length);
+
+		// No center moves available
+		if(centerMoves.size() == 0) {
+			return 0;
+		}
+
+		// Return a random center move
+		return centerMoves.get(rng.nextInt(centerMoves.size()));
+	}
+
 }

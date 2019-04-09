@@ -225,7 +225,7 @@ public class PentagoBitBoard {
 	 *
 	 * @return All legal moves constrained to positions in availableSwaps and swaps in quadrantSwaps as longs
 	 */
-	private ArrayList<Long> getAllLegalMoves(long availableSpots, byte[][] quadrantSwaps, int intialSize) {
+	ArrayList<Long> getAllLegalMoves(long availableSpots, byte[][] quadrantSwaps, int intialSize) {
 
 		ArrayList<Long> moves = new ArrayList<>(intialSize);
 
@@ -584,6 +584,10 @@ public class PentagoBitBoard {
 		return new PentagoMove(coordColRow[1], coordColRow[0], Quadrant.values()[smallerQuad], Quadrant.values()[largerQuad], player);
 	}
 
+	long[] getPieces() {
+		return this.pieces.clone();
+	}
+
 	byte getWinner() {
 		return winner;
 	}
@@ -639,6 +643,7 @@ public class PentagoBitBoard {
 
 	public static void main(String[] args) {
 		maskTest();
+		countWinsByPlacementType();
 		PentagoBitBoard pbs = new PentagoBitBoard();
 
 		Scanner scanner = new Scanner(System.in);
@@ -682,5 +687,27 @@ public class PentagoBitBoard {
 		for (long mask: oneAwayMasks) {
 			System.out.println(new PentagoBitBoard(new long[] {mask, 0L}, (byte)0, (byte)0, (byte)0));
 		}
+	}
+
+	private static void countWinsByPlacementType() {
+		long centerPiece = 0b000000010000000000000000000000000000L;
+		long cornerPiece = 0b100000000000000000000000000000000000L;
+		long edgePiece = 0b010000000000000000000000000000000000L;
+
+		int[] winCounts = {0,0,0};
+
+		for (long mask : WINNING_MASKS) {
+			if((mask & centerPiece) == centerPiece) {
+				winCounts[0]++;
+			} else if ((mask & cornerPiece) == cornerPiece) {
+				winCounts[1]++;
+			} else if ((mask & edgePiece) == edgePiece) {
+				winCounts[2]++;
+			}
+		}
+
+		System.out.println("Center Piece wins: " + winCounts[0]);
+		System.out.println("Corner Piece wins: " + winCounts[1]);
+		System.out.println("Edge Piece wins: " + winCounts[2]);
 	}
 }
