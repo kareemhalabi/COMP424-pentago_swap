@@ -2,7 +2,6 @@ package student_player;
 
 import boardgame.Move;
 import pentago_swap.PentagoBoardState;
-import pentago_swap.PentagoMove;
 import pentago_swap.PentagoPlayer;
 
 import java.util.ArrayList;
@@ -16,7 +15,7 @@ public class StudentPlayer extends PentagoPlayer {
 	// Create a single random number generator for the program
 	static Random rng = new Random();
 
-    private static final int TIMEOUT = 1400;
+    private static final int TIMEOUT = 1300;
 
 
     /**
@@ -40,26 +39,30 @@ public class StudentPlayer extends PentagoPlayer {
     	long startTime = System.currentTimeMillis();
     	long endTime = startTime + TIMEOUT;
 
+    	// Covert to my bitboard
     	PentagoBitBoard bitBoardState = new PentagoBitBoard(boardState);
 
+    	//------------ Static Strategies ------------
+
+    	// Some pre-MCTS move checks when a win/loss becomes possible
     	if(bitBoardState.getTurnNumber() >= 7) {
-    		long winningMove = checkOffensiveMove(bitBoardState);
+    		// If there is a next move that guarantees a move, ignore MCTS and play it
+    		long winningMove = StaticStrategies.checkOffensiveMove(bitBoardState);
     		if(winningMove != 0) {
     			System.out.println("Found a winning move!");
 				return longToPentagoMove(winningMove);
 			}
-    		long defensiveMove = checkDefensiveMove(bitBoardState);
+
+    		// If there is a next move that blocks an opponent from winning, ignore MCTS and play it
+			// TODO some moves still allow the opponent to win
+    		long defensiveMove = StaticStrategies.checkDefensiveMove(bitBoardState);
     		if(defensiveMove != 0) {
-
-    			// TODO find out why some returned moves are illegal
-				PentagoMove potentialDefensiveMove = longToPentagoMove(defensiveMove);
-				if(boardState.isLegal(potentialDefensiveMove)) {
-					System.out.println("Found a defensive move!");
-					return longToPentagoMove(defensiveMove);
-				}
-
+				System.out.println("Found a defensive move!");
+				return longToPentagoMove(defensiveMove);
 			}
 		}
+
+    	//------------ Begin MCTS ------------
 
     	UCTNode root = new UCTNode(0L);
 
@@ -67,7 +70,7 @@ public class StudentPlayer extends PentagoPlayer {
 			//----------- Descent (and Growth) phase -----------
 			UCTNode promisingNode = selectPromisingNode(root);
 
-			PentagoBitBoard promisingState = promisingNode.getState();
+			PentagoBitBoard promisingState = promisingNode.getState(bitBoardState);
 			if(!promisingState.gameOver()) {
 				expandNode(promisingNode, promisingState);
 			}
@@ -78,71 +81,25 @@ public class StudentPlayer extends PentagoPlayer {
 				nodeToExplore = promisingNode.getRandomChild();
 			}
 			byte[] result = simulateRandomPlayout(nodeToExplore, bitBoardState);
-//			long rolloutTime = System.nanoTime() - currentTime;
 
 			//----------- Update phase -----------
 			nodeToExplore.backPropagate(result);
 		}
 
 		UCTNode finalSelection = root.getMaxSimsChild();
+		System.out.println("Number of simulations: " + root.getNumSims()/2);
 		return longToPentagoMove(finalSelection.getMove());
     }
 
-	private long checkOffensiveMove(PentagoBitBoard bitBoardState) {
-
-    	PentagoBitBoard bitBoardStateClone = (PentagoBitBoard) bitBoardState.clone();
-
-    	byte player = bitBoardStateClone.getTurnPlayer();
-
-    	for(long move : bitBoardStateClone.getAllLegalNonSymmetricMoves()) {
-			bitBoardStateClone.processMove(move);
-    		if(bitBoardStateClone.getWinner() == player) {
-    			return move;
-			}
-			bitBoardStateClone.undoMove(move);
-		}
-    	// No offensive move found
-    	return 0;
-	}
-
-	private long checkDefensiveMove(PentagoBitBoard bitBoardState) {
-
-		PentagoBitBoard bitBoardStateClone = (PentagoBitBoard) bitBoardState.clone();
-
-		bitBoardStateClone.togglePlayer();
-    	byte opponent = bitBoardStateClone.getTurnPlayer();
-
-    	// Play a random move to toggle to opponent
-		long opponentMove = checkOffensiveMove(bitBoardStateClone);
-		bitBoardStateClone.undoMove(opponentMove);
-		if(opponentMove != 0) {
-			// We'll play what the opponent would have to win
-			long defensiveMove = opponentMove ^ (1L << 40);
-
-			// Double check we don't let opponent win anyway
-			bitBoardStateClone.processMove(defensiveMove);
-			if(bitBoardStateClone.getWinner() != opponent) {
-				return defensiveMove;
-			}
-		}
-		bitBoardStateClone.togglePlayer();
-		return 0;
-	}
-
-	private byte[] simulateRandomPlayout(UCTNode start, PentagoBitBoard startState) {
-
-		PentagoBitBoard state = start.getState(startState);
-		while(!state.gameOver()) {
-			state.processMove(state.getRandomMove());
-		}
-		// Returns who won and who was last to play
-		return new byte[] {state.getWinner(), state.getOpponent()};
-	}
-
+	/**
+	 * Performs the descent step of MCTS
+	 * @param root Root node of UCT
+	 * @return the most promising node to expand/explore
+	 */
 	private UCTNode selectPromisingNode(UCTNode root) {
-    	UCTNode currentNode = root;
+		UCTNode currentNode = root;
 
-    	while (currentNode.hasChildren()) {
+		while (currentNode.hasChildren()) {
 			double maxValue = Double.MIN_VALUE;
 			int maxIndex = -1;
 
@@ -156,9 +113,14 @@ public class StudentPlayer extends PentagoPlayer {
 
 			currentNode = currentNode.getChildren()[maxIndex];
 		}
-    	return currentNode;
+		return currentNode;
 	}
 
+	/**
+	 * Performs the expansion stage of MCTS
+	 * @param growthNode UCTNode to expand
+	 * @param startState the current state of the game
+	 */
 	private void expandNode(UCTNode growthNode, PentagoBitBoard startState) {
 		ArrayList<Long> availableMoves = growthNode.getState(startState).getAllLegalNonSymmetricMoves();
 		UCTNode[] children = new UCTNode[availableMoves.size()];
@@ -168,5 +130,21 @@ public class StudentPlayer extends PentagoPlayer {
 			children[i] = child;
 		}
 		growthNode.setChildren(children);
+	}
+
+	/**
+	 * Performs a default policy simulation
+	 * @param start Start UCTNode
+	 * @param startState the current state of the game
+	 * @return Results of the game (and who was last to play)
+	 */
+	private byte[] simulateRandomPlayout(UCTNode start, PentagoBitBoard startState) {
+
+		PentagoBitBoard state = start.getState(startState);
+		while(!state.gameOver()) {
+			state.processMove(state.getRandomMove());
+		}
+		// Returns who won and who was last to play
+		return new byte[] {state.getWinner(), state.getOpponent()};
 	}
 }

@@ -12,6 +12,9 @@ import java.util.concurrent.ThreadLocalRandom;
 
 import static pentago_swap.PentagoBoardState.*;
 
+/**
+ * A class to more efficiently represent the state an actions applicable to a PentagoBoardState
+ */
 public class PentagoBitBoard {
 
 	private static final int NUM_QUADS = 4;
@@ -21,8 +24,9 @@ public class PentagoBitBoard {
 	// Supposedly faster than java.util.Random
 	// https://lemire.me/blog/2016/02/01/default-random-number-generators-are-slow/
 	private static final ThreadLocalRandom rand = ThreadLocalRandom.current();
-	public static final byte DRAW = Byte.MAX_VALUE;
-	public static final byte NOBODY = Byte.MAX_VALUE - 1;
+
+	static final byte DRAW = Byte.MAX_VALUE;
+	private static final byte NOBODY = Byte.MAX_VALUE - 1;
 
 	private long[] pieces;
 
@@ -31,64 +35,102 @@ public class PentagoBitBoard {
 	private byte winner;
 
 
-	private static final long[] quadrantMasks = {
-		0b111000111000111000000000000000000000L,
-		0b000111000111000111000000000000000000L,
-		0b000000000000000000111000111000111000L,
-		0b000000000000000000000111000111000111L
+	/**
+	 * Bit mask to access each quadrant separately
+	 */
+	private static final long[] QUADRANT_MASKS = {
+		0b111000111000111000000000000000000000L, // Quadrant 0
+		0b000111000111000111000000000000000000L, // Quadrant 1
+		0b000000000000000000111000111000111000L, // Quadrant 2
+		0b000000000000000000000111000111000111L  // Quadrant 3
 	};
 
-	private static final long[] winningMasks = new long[32];
+	/**
+	 * Stores all the possible arrangements of a winning set of pieces
+	 */
+	private static final long[] WINNING_MASKS = new long[32];
 
-	// Generates the winningMasks
+	// Generates the WINNING_MASKS
 	static {
 		// Generate the rows
 		long baseRowMask = 0b111110000000000000000000000000000000L;
 		int i = 0;
-		winningMasks[i++] = baseRowMask;
+		WINNING_MASKS[i++] = baseRowMask;
 		for(; i < 6; i++) {
 			baseRowMask = baseRowMask >> 6;
-			winningMasks[i] = baseRowMask;
+			WINNING_MASKS[i] = baseRowMask;
 		}
 		baseRowMask = baseRowMask >> 1;
-		winningMasks[i++] = baseRowMask;
+		WINNING_MASKS[i++] = baseRowMask;
 		for(; i < 12; i++) {
 			baseRowMask = baseRowMask << 6;
-			winningMasks[i] = baseRowMask;
+			WINNING_MASKS[i] = baseRowMask;
 		}
 
 		// Generate the columns
 		long baseColumnMask = 0b100000100000100000100000100000000000L;
-		winningMasks[i++] = baseColumnMask;
+		WINNING_MASKS[i++] = baseColumnMask;
 		for(; i < 24; i++) {
 			baseColumnMask = baseColumnMask >> 1;
-			winningMasks[i] = baseColumnMask;
+			WINNING_MASKS[i] = baseColumnMask;
 		}
 
 		// Diagonal masks (hardcoded since the logic to generate them would be too complex)
-		winningMasks[24] = 0b100000010000001000000100000010000000L;
-		winningMasks[25] = 0b010000001000000100000010000001000000L;
-		winningMasks[26] = 0b000000010000001000000100000010000001L;
-		winningMasks[27] = 0b000000100000010000001000000100000010L;
-		winningMasks[28] = 0b000001000010000100001000010000000000L;
-		winningMasks[29] = 0b000010000100001000010000100000000000L;
-		winningMasks[30] = 0b000000000010000100001000010000100000L;
-		winningMasks[31] = 0b000000000001000010000100001000010000L;
+		WINNING_MASKS[24] = 0b100000010000001000000100000010000000L;
+		WINNING_MASKS[25] = 0b010000001000000100000010000001000000L;
+		WINNING_MASKS[26] = 0b000000010000001000000100000010000001L;
+		WINNING_MASKS[27] = 0b000000100000010000001000000100000010L;
+		WINNING_MASKS[28] = 0b000001000010000100001000010000000000L;
+		WINNING_MASKS[29] = 0b000010000100001000010000100000000000L;
+		WINNING_MASKS[30] = 0b000000000010000100001000010000100000L;
+		WINNING_MASKS[31] = 0b000000000001000010000100001000010000L;
 
+	}
+
+	// Didn't end up using this but it contains all configurations that are almost a win (one placement away after quadrant swap)
+	private static final Long[] oneAwayMasks;
+
+	// Generates the oneAwayMasks (without duplicates, that's why I use a HashSet)
+	static {
+
+		HashSet<Long> oneAwaySet = new HashSet<>();
+
+		for(long winningMask : WINNING_MASKS) {
+			long oneBitMask = 1;
+			for(int i = 0; i < BOARD_SIZE * BOARD_SIZE; i++) {
+				if((winningMask & ~oneBitMask) != winningMask) {
+					oneAwaySet.add(winningMask & ~oneBitMask);
+				}
+				oneBitMask = oneBitMask << 1;
+			}
+		}
+
+		oneAwayMasks = oneAwaySet.toArray(new Long[0]);
 	}
 
 
 	/**
-	 * Maps a source and destination quadrant to
-	 * how many bits need to be shifted
+	 * All possible non-symmetric swaps of a quadrant
 	 */
-	private static final int[][] quadrantBitShifts = {
+	public static final byte[][] QUAD_SWAPS = {{0, 1}, {0, 2}, {0, 3}, {1, 2}, {1, 3}, {2, 3}};
+
+	/**
+	 * Maps a source and destination quadrant to
+	 * how many bits need to be shifted to get from the source quadrant to the destination quadrant
+	 * The -1 are dummy values that should not be used
+	 */
+	private static final int[][] QUADRANT_BIT_SHIFTS = {
 		{-1, 3, 18, 21},  // From Quad 0 -> Quad 1 is 3 bits, Quad 0 -> Quad 2 is 18 bits and Quad 0 -> Quad 3 is 21 bits
 		{-1,-1, 15, 18},  // From Quad 1 -> Quad 2 is 15 bits, Quad 1 -> Quad 3 is 18 bits
 		{-1,-1,-1, 3},    // From Quad 2 -> Quad 3 is 3 bits
 		{-1,-1,-1, 0}     // From Quad 3 -> Quad 3 is 0 bits (not used as an actual swap since it would be invalid)
 	};
 
+
+	/**
+	 * Constructor for conversion of PentagoBoardState to a PentagoBitBoard
+	 * @param board
+	 */
 	PentagoBitBoard(PentagoBoardState board) {
 
 		this.pieces = new long[2];
@@ -97,7 +139,7 @@ public class PentagoBitBoard {
 		for(int x = 0; x < BOARD_SIZE; x++) {
 			for(int y = 0; y < BOARD_SIZE; y++) {
 
-				//Shift the last pieces down
+				//Shift the last iteration's pieces left
 				this.pieces[BLACK] = this.pieces[BLACK] << 1;
 				this.pieces[WHITE] = this.pieces[WHITE] << 1;
 
@@ -113,7 +155,7 @@ public class PentagoBitBoard {
 
 		this.turnPlayer = (byte) board.getTurnPlayer();
 
-		// I use turn number as number of plays on the board (makes for faster allocation of legalmoves array)
+		// NOTE I use turn number as number of plays on the board (makes for faster allocation of legal moves array)
 		this.turnNumber = (byte) (board.getTurnNumber() * 2 + this.turnPlayer);
 		if(board.getWinner() == Board.DRAW) {
 			this.winner = DRAW;
@@ -124,12 +166,19 @@ public class PentagoBitBoard {
 		}
 	}
 
+
+	/**
+	 * Creates a blank PentagoBitBoard for debugging purposes
+	 */
 	private PentagoBitBoard() {
 		this.pieces = new long[2];
 		this.winner = NOBODY;
 	}
 
-	// For Cloning
+	/**
+	 * Constructor for Cloning
+	 * @param board Existing board
+	 */
 	private PentagoBitBoard(PentagoBitBoard board) {
 		this.pieces = new long[2];
 		this.pieces[0] = board.pieces[0];
@@ -144,6 +193,13 @@ public class PentagoBitBoard {
 		return new PentagoBitBoard(this);
 	}
 
+	/**
+	 * Creates a PentagoBitBoard with preset properties
+	 * @param pieces Black and white piece placements
+	 * @param winner Current winner of the state
+	 * @param turnPlayer Current player
+	 * @param turnNumber Current turn number
+	 */
 	// For Debug
 	private PentagoBitBoard(long[] pieces, byte winner, byte turnPlayer, byte turnNumber) {
 		this.pieces = pieces;
@@ -163,7 +219,11 @@ public class PentagoBitBoard {
 	 *
 	 * 	Note that sq must be less than lq
 	 *
-	 * @return All legal moves as longs
+	 * @param availableSpots Specifies which locations on the board this method should generate moves for
+	 * @param quadrantSwaps Specifies the domain of quadrant swaps that should be used for move generation
+	 * @param intialSize Provide an expected size of moves such that the returned ArrayList is populated more efficiently
+	 *
+	 * @return All legal moves constrained to positions in availableSwaps and swaps in quadrantSwaps as longs
 	 */
 	private ArrayList<Long> getAllLegalMoves(long availableSpots, byte[][] quadrantSwaps, int intialSize) {
 
@@ -182,13 +242,47 @@ public class PentagoBitBoard {
 		return moves;
 	}
 
-	public ArrayList<Long> getAllLegalNonSymmetricMoves() {
+	/**
+	 * Efficiently attempts to play a random position on the board until a legal placement is found then selects
+	 * a random quadrant swap.
+	 *
+	 * @return A random legal move
+	 */
+	long getRandomMove() {
 
+		long availableSpots = ~(this.pieces[WHITE] | this.pieces[BLACK]);
+
+		long move;
+		// Pick a random empty coordinate
+		do {
+			move = 1L << rand.nextInt(BOARD_SIZE * BOARD_SIZE);
+		} while((move & availableSpots) != move);
+
+		// Pick random quadrant swap
+		byte[] swaps = QUAD_SWAPS[rand.nextInt(QUAD_SWAPS.length)];
+
+		int largerQuad = swaps[1];
+		int smallerQuad = swaps[0];
+
+		return ((((((long)turnPlayer << 2) | smallerQuad) << 2) | largerQuad) << 36) | move;
+	}
+
+
+	/**
+	 * Generates all legal moves available in this state ignoring moves that are symmetric:
+	 * Symmetry is identified by examining the number of identical quadrants to determine
+	 * a smaller subset of all legal moves to generate
+	 *
+	 * @return All legal moves ignoring symmetric moves
+	 */
+	ArrayList<Long> getAllLegalNonSymmetricMoves() {
+
+		// Identify which quadrants are identical
 		ArrayList<ArrayList<Byte>> equalQuadrants = partitionQuadrants();
 
 		ArrayList<Long> moves;
 
-		byte[][] swaps = {{0, 1}, {0, 2}, {0, 3}, {1, 2}, {1, 3}, {2, 3}};
+		byte[][] swaps = QUAD_SWAPS;
 		long placements = ~(this.pieces[WHITE] | this.pieces[BLACK]);
 		int initialCapacity = ((BOARD_SIZE * BOARD_SIZE) - this.turnNumber) * swaps.length;
 
@@ -200,7 +294,7 @@ public class PentagoBitBoard {
 
 				byte Q0 = equalQuadrants.get(0).get(0);
 
-				placements = placements & quadrantMasks[Q0];
+				placements = placements & QUADRANT_MASKS[Q0];
 				swaps = new byte[][]{{1, 2}};
 				initialCapacity = (QUAD_SIZE * QUAD_SIZE) * swaps.length;
 
@@ -215,20 +309,21 @@ public class PentagoBitBoard {
 					Q0 = equalQuadrants.get(0).get(0);
 					byte Q1 = equalQuadrants.get(1).get(0);
 
-					placements = placements & (quadrantMasks[Q0] | quadrantMasks[Q1]);
+					placements = placements & (QUADRANT_MASKS[Q0] | QUADRANT_MASKS[Q1]);
 					initialCapacity = (QUAD_SIZE * QUAD_SIZE) * 2 * swaps.length;
 
 					moves = getAllLegalMoves(placements, swaps, initialCapacity);
 				}
 				// 1 unique, 3 identical quadrants(Q0, Q1=Q2=Q3):
 				// Try a move for each free spot in Q0 and do a swap for Q0 -> Q1, Q0 -> Q2, Q0 -> Q2, Q1 -> Q2
-				// Try a move for each free spot in Q1 and do all the swaps
+				// And try a move for each free spot in Q1 and do all the swaps
 				else {
 
 					ArrayList<Byte> uniqueQuadrant = equalQuadrants.get(0).size() < equalQuadrants.get(1).size() ? equalQuadrants.get(0) : equalQuadrants.get(1);
 					ArrayList<Byte> identicalQuadrants = equalQuadrants.get(0).size() > equalQuadrants.get(1).size() ? equalQuadrants.get(0) : equalQuadrants.get(1);
 
-					long placementsQ0 = placements & quadrantMasks[uniqueQuadrant.get(0)];
+					// Generate moves for the unique quadrant
+					long placementsQ0 = placements & QUADRANT_MASKS[uniqueQuadrant.get(0)];
 					byte[][] swapsQ0 = new byte[4][2];
 					int initialCapacityQ0 = (QUAD_SIZE * QUAD_SIZE) * swaps.length;
 
@@ -251,7 +346,8 @@ public class PentagoBitBoard {
 
 					moves = getAllLegalMoves(placementsQ0, swapsQ0, initialCapacityQ0);
 
-					long placementsQ1 = placements & quadrantMasks[identicalQuadrants.get(0)];
+					// Next generate moves for one of the 3 identical quadrants
+					long placementsQ1 = placements & QUADRANT_MASKS[identicalQuadrants.get(0)];
 					byte[][] swapsQ1 = swaps;
 					int initialCapacityQ1 = (QUAD_SIZE * QUAD_SIZE) * swapsQ1.length;
 
@@ -260,7 +356,7 @@ public class PentagoBitBoard {
 
 				break;
 
-			// Default is no identical pairs of quadrants: return all legal moves as usual
+			// Default is to return all legal moves as usual
 			default:
 				moves = getAllLegalMoves(placements, swaps, initialCapacity);
 				break;
@@ -269,6 +365,20 @@ public class PentagoBitBoard {
 		return moves;
 	}
 
+	/**
+	 * Splits quadrants into partitions where quadrants in the same partition are identical.
+	 * Useful for identifying symmetric moves.
+	 *
+	 * Examples:
+	 * Q0 = Q1 =/= Q2 = Q3 		Q0 =/= Q1 = Q2 = Q3 	Q0 = Q1 = Q2 = Q3
+	 * {						{						{
+	 *     {0, 1},             		{0},            	 	{0, 1, 2, 3}
+	 *     {2, 3}              		{1, 2, 3}       	}
+	 * }                    	}
+	 *
+	 *
+	 * @return An Array List of partitions where each partition contains identical quadrants.
+	 */
 	private ArrayList<ArrayList<Byte>> partitionQuadrants() {
 
 		// Put each quadrant (the two piece longs) into a list
@@ -277,8 +387,8 @@ public class PentagoBitBoard {
 		for(int i = 0; i < NUM_QUADS; i++) {
 			quadrants.add(new ArrayList<>());
 			for(long pieceLong : this.pieces) {
-				// Shift all quadrants to the same position
-				quadrants.get(i).add(pieceLong >> quadrantBitShifts[i][NUM_QUADS-1]);
+				// Shift all quadrants to the same bit position
+				quadrants.get(i).add(pieceLong >> QUADRANT_BIT_SHIFTS[i][NUM_QUADS-1]);
 			}
 		}
 
@@ -287,7 +397,7 @@ public class PentagoBitBoard {
 
 		for(byte j = 0; j < NUM_QUADS; j++) {
 
-			// Found a similar quadrant, add quadrant number to the partition
+			// Found a similar quadrant, add quadrant number to existing partition
 			if(equalQuadrants.containsKey(quadrants.get(j))) {
 				equalQuadrants.get(quadrants.get(j)).add(j);
 			}
@@ -302,30 +412,39 @@ public class PentagoBitBoard {
 		return new ArrayList<>(equalQuadrants.values());
 	}
 
-	public long getRandomMove() {
+	/**
+	 * Swaps two quadrants on the board. Note that smallerQuad < largerQuad. No legality is checked on this for efficiency
+	 *
+	 * @param smallerQuad First quadrant to swap
+	 * @param largerQuad Second quadrant to swap
+	 */
+	private void swapQuadrants(int smallerQuad, int largerQuad) {
 
-		long availableSpots = ~(this.pieces[WHITE] | this.pieces[BLACK]);
+		for(int i = 0; i < this.pieces.length; i++) {
+			// Shift the smaller quad down to make for the new larger quad
 
-		long move;
-		// Pick a random empty coordinate
-		do {
-			move = 1L << rand.nextInt(BOARD_SIZE * BOARD_SIZE);
-		} while((move & availableSpots) != move);
+			long newLarge = (this.pieces[i] & QUADRANT_MASKS[smallerQuad]) >> QUADRANT_BIT_SHIFTS[smallerQuad][largerQuad];
 
-		// Pick random quadrants
-		int firstQuad = rand.nextInt(4);
-		int secondQuad;
-		do {
-			secondQuad = rand.nextInt(4);
-		} while(firstQuad == secondQuad);
+			// Shift the larger quad up to make the new smaller quad
+			long newSmall = (this.pieces[i] & QUADRANT_MASKS[largerQuad]) << QUADRANT_BIT_SHIFTS[smallerQuad][largerQuad];
 
-		int largerQuad = firstQuad > secondQuad ? firstQuad : secondQuad;
-		int smallerQuad = firstQuad < secondQuad ? firstQuad : secondQuad;
+			// Perform the update
+			long newConfig = newLarge | newSmall;
+			long updateMask = ~ (QUADRANT_MASKS[smallerQuad] | QUADRANT_MASKS[largerQuad]);
 
-		return ((((((long)turnPlayer << 2) | smallerQuad) << 2) | largerQuad) << 36) | move;
+			this.pieces[i] = (this.pieces[i] & updateMask) | newConfig;
+		}
 	}
 
-	public void processMove(long move) {
+
+	/**
+	 * Applies a move to the current board state. Note that legality is not checked here for efficiency
+	 * as it is assumed that the move applied was generated from getAllLegalNonSymmetricMoves() or similar legal
+	 * move generator.
+	 *
+	 * @param move The next move to play
+	 */
+	void processMove(long move) {
 
 		//Extract info from move
 		int player = (int) ((move >> 40) & 1);
@@ -344,7 +463,13 @@ public class PentagoBitBoard {
 
 	}
 
-	public void undoMove(long move) {
+
+	/**
+	 * Reverses the effect of a recently placed move. Note that legality is not checked for efficiency as it is assumed
+	 * that the move to reverse was most recently applied
+	 * @param move the move to undo
+	 */
+	void undoMove(long move) {
 
 		//Extract info from move
 		int player = (int) ((move >> 40) & 1);
@@ -364,24 +489,9 @@ public class PentagoBitBoard {
 		this.turnPlayer = (byte) (1 - this.turnPlayer);
 	}
 
-	public void swapQuadrants(int smallerQuad, int largerQuad) {
-
-		for(int i = 0; i < this.pieces.length; i++) {
-			// Shift the smaller quad down to make for the new larger quad
-
-			long newLarge = (this.pieces[i] & quadrantMasks[smallerQuad]) >> quadrantBitShifts[smallerQuad][largerQuad];
-
-			// Shift the larger quad up to make the new smaller quad
-			long newSmall = (this.pieces[i] & quadrantMasks[largerQuad]) << quadrantBitShifts[smallerQuad][largerQuad];
-
-			// Perform the update
-			long newConfig = newLarge | newSmall;
-			long updateMask = ~ (quadrantMasks[smallerQuad] | quadrantMasks[largerQuad]);
-
-			this.pieces[i] = (this.pieces[i] & updateMask) | newConfig;
-		}
-	}
-
+	/**
+	 * Checks if the board is in a winning configuration and updates the winner variable if so.
+	 */
 	private void updateWinner() {
 		boolean playerWin = checkWin(this.turnPlayer);
 		boolean otherWin = checkWin((byte) (1 - this.turnPlayer));
@@ -395,8 +505,13 @@ public class PentagoBitBoard {
 		}
 	}
 
+	/**
+	 * Helper method for updateWinner()
+	 * @param turnPlayer which player to check win for
+	 * @return true if turnPlayer has five pieces in a row, false otherwise
+	 */
 	private boolean checkWin(byte turnPlayer) {
-		for(long mask: winningMasks) {
+		for(long mask: WINNING_MASKS) {
 			if((mask & this.pieces[turnPlayer]) == mask) {
 				return true;
 			}
@@ -404,22 +519,39 @@ public class PentagoBitBoard {
 		return false;
 	}
 
-	public boolean gameOver() {
+	/**
+	 * Checks if the game is over
+	 * @return true if game is over, false if still ongoing
+	 */
+	boolean gameOver() {
 		return (this.turnNumber >= MAX_TURNS) || this.winner != NOBODY;
 	}
 
-	public static long xyToBit(int x, int y) {
+	/**
+	 * Converts an col, row position to a placement in a bit move.
+	 *
+	 * @param col column position (from 0 to 5 inclusive)
+	 * @param row row position (from 0 to 5 inclusive
+	 * @return long with placement bit at correct position
+	 */
+	private static long colRowToLong(int col, int row) {
 
-		// Get x in correct position:
-		long bit = (1 << (BOARD_SIZE - 1 - x));
+		// Get col in correct position:
+		long bit = (1 << (BOARD_SIZE - 1 - col));
 
-		// Get y in correct position
-		bit = bit << (BOARD_SIZE * (BOARD_SIZE - 1 - y));
+		// Get row in correct position
+		bit = bit << (BOARD_SIZE * (BOARD_SIZE - 1 - row));
 
 		return bit;
 	}
 
-	public static int[] bitToXY(long move) {
+	/**
+	 * Extracts the column and row number placement of a move long.
+	 *
+	 * @param move The move to extract
+	 * @return integer array containing coordinates
+	 */
+	private static int[] bitToColRow(long move) {
 
 		int bitPosition = 0;
 		long mask = 1;
@@ -428,42 +560,47 @@ public class PentagoBitBoard {
 			mask = mask << 1;
 		}
 
-		int x = (BOARD_SIZE*BOARD_SIZE - 1 - bitPosition) % BOARD_SIZE;
-		int y = (BOARD_SIZE*BOARD_SIZE - 1 - bitPosition) / BOARD_SIZE;
+		int col = (BOARD_SIZE*BOARD_SIZE - 1 - bitPosition) % BOARD_SIZE;
+		int row = (BOARD_SIZE*BOARD_SIZE - 1 - bitPosition) / BOARD_SIZE;
 
-		return new int[] {x, y};
+		return new int[] {col, row};
 	}
 
-	public static PentagoMove longToPentagoMove(long move) {
+	/**
+	 * Coverts a move long to a PentagoMove object
+	 * @param move The move long to convert
+	 * @return a new equivalent Pentago move
+	 */
+	static PentagoMove longToPentagoMove(long move) {
 
 		int player = (int) ((move >> 40) & 1);
 		int smallerQuad = (int) ((move >> 38) & 0b11);
 		int largerQuad = (int) ((move >> 36) & 0b11);
 		long coord = move & 0b111111111111111111111111111111111111L;
 
-		int[] coordXY = bitToXY(coord);
+		int[] coordColRow = bitToColRow(coord);
 
-		// I accidentally used a different coordinate system so return x -> y, y -> x
-		return new PentagoMove(coordXY[1], coordXY[0], Quadrant.values()[smallerQuad], Quadrant.values()[largerQuad], player);
+		// I used a different coordinate system so return row -> y, col -> x
+		return new PentagoMove(coordColRow[1], coordColRow[0], Quadrant.values()[smallerQuad], Quadrant.values()[largerQuad], player);
 	}
 
-	public byte getWinner() {
+	byte getWinner() {
 		return winner;
 	}
 
-	public byte getOpponent() {
+	byte getOpponent() {
 		return (byte) (1 - this.turnPlayer);
 	}
 
-	public void togglePlayer() {
+	void togglePlayer() {
 		this.turnPlayer = getOpponent();
 	}
 
-	public byte getTurnNumber() {
+	byte getTurnNumber() {
 		return this.turnNumber;
 	}
 
-	public byte getTurnPlayer() {
+	byte getTurnPlayer() {
 		return this.turnPlayer;
 	}
 
@@ -477,7 +614,7 @@ public class PentagoBitBoard {
 			for(int x = 0; x < BOARD_SIZE; x++) {
 				boardString.append(" ");
 
-				long xy = xyToBit(x, y);
+				long xy = colRowToLong(x, y);
 				if((pieces[WHITE] & xy) == xy) {
 					boardString.append('W');
 				} else if((pieces[BLACK] & xy) == xy) {
@@ -501,7 +638,7 @@ public class PentagoBitBoard {
 	}
 
 	public static void main(String[] args) {
-//		maskTest();
+		maskTest();
 		PentagoBitBoard pbs = new PentagoBitBoard();
 
 		Scanner scanner = new Scanner(System.in);
@@ -511,7 +648,7 @@ public class PentagoBitBoard {
 			String moveStr = scanner.nextLine();
 			String[] moveStrs = moveStr.split(" ");
 
-			long m = ((((((long)id << 2) | Integer.parseInt(moveStrs[2])) << 2) | Integer.parseInt(moveStrs[3])) << 36) | xyToBit(Integer.parseInt(moveStrs[0]), Integer.parseInt(moveStrs[1]));
+			long m = ((((((long)id << 2) | Integer.parseInt(moveStrs[2])) << 2) | Integer.parseInt(moveStrs[3])) << 36) | colRowToLong(Integer.parseInt(moveStrs[0]), Integer.parseInt(moveStrs[1]));
 
 			pbs.processMove(m);
 			System.out.println(pbs);
@@ -536,8 +673,13 @@ public class PentagoBitBoard {
 		}
 	}
 
-	public static void maskTest() {
-		for (long mask: winningMasks) {
+	private static void maskTest() {
+		System.out.println("Winning Masks:");
+		for (long mask: WINNING_MASKS) {
+			System.out.println(new PentagoBitBoard(new long[] {mask, 0L}, (byte)0, (byte)0, (byte)0));
+		}
+		System.out.println("One Away Masks:");
+		for (long mask: oneAwayMasks) {
 			System.out.println(new PentagoBitBoard(new long[] {mask, 0L}, (byte)0, (byte)0, (byte)0));
 		}
 	}

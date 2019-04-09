@@ -1,7 +1,7 @@
 <project>
     <property name="target.version" value="1.8"/>
     <property name="run.classpath" value="bin"/>
-    <property name="n_games" value="2"/>
+    <property name="n_games" value="10"/>
 
     <target name="clean">
         <delete dir="bin"/>
