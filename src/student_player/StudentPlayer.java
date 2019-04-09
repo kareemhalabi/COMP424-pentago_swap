@@ -15,7 +15,7 @@ public class StudentPlayer extends PentagoPlayer {
 	// Create a single random number generator for the program
 	static Random rng = new Random();
 
-    private static final int TIMEOUT = 1300;
+    private static final int TIMEOUT = 1000;
 
 
     /**
@@ -63,7 +63,7 @@ public class StudentPlayer extends PentagoPlayer {
 		}
 
     	// Towards beginning occupy as many centers as possible
-		if(bitBoardState.getTurnNumber() < 7) {
+		if(bitBoardState.getTurnNumber() < 3) {
 			long centerMove = StaticStrategies.checkCenterPlacement(bitBoardState);
 			if(centerMove != 0) {
 				System.out.println("Found a center placement!");
