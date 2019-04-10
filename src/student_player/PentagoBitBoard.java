@@ -28,6 +28,24 @@ public class PentagoBitBoard {
 	static final byte DRAW = Byte.MAX_VALUE;
 	private static final byte NOBODY = Byte.MAX_VALUE - 1;
 
+	/**
+	 * Pieces are stored in two long values where a bit set (1) indicates a piece is present at that location.
+	 * <pre>
+	 * Pentago Board:               Pieces are stored left to right using the following pattern:
+	 * -------------
+	 * |r 1 r|1 r 1|                 |           Unused           |Row 1 |Row 2 |Row 3 |Row 4 |Row 5 |Row 6 |
+	 * |r 2 r|2 r 2|                 |----------------------------|------|------|------|------|------|------|
+	 * |r 3 r|3 r 3|    pieces[i] =  |............................|r1r1r1|r2r2r2|r3r3r3|r4r4r4|r5r5r5|r6r6r6|
+	 * |-----|-----|
+	 * |r 4 r|4 r 4|
+	 * |r 5 r|5 r 5|
+	 * |r 6 r|6 r 6|
+	 * -------------
+	 * </pre>
+	 * pieces[0] are for White Placements
+	 * pieces[1] are for Black Placements
+	 *
+	 */
 	private long[] pieces;
 
 	private byte turnPlayer;
@@ -210,13 +228,13 @@ public class PentagoBitBoard {
 
 	/**
 	 * Returns all legal moves as a long:
-	 *
-	 *       |                       |P|     |                                    |
-	 *       |                       |I|4 bit|                                    |
-	 * 	     |        unused         |D|quads|       36 bits for coordinate       |
-	 * 	     ----------------------------------------------------------------------
-	 *       |.......................|p|sq|lq|cccccccccccccccccccccccccccccccccccc|
-	 *
+	 * <pre>
+	 *|                       |P|     |                                    |
+	 *|                       |I|4 bit|                                    |
+	 *|        unused         |D|quads|       36 bits for coordinate       |
+	 *----------------------------------------------------------------------
+	 *|.......................|p|sq|lq|cccccccccccccccccccccccccccccccccccc|
+	 * </pre>
 	 * 	Note that sq must be less than lq
 	 *
 	 * @param availableSpots Specifies which locations on the board this method should generate moves for
@@ -370,12 +388,13 @@ public class PentagoBitBoard {
 	 * Useful for identifying symmetric moves.
 	 *
 	 * Examples:
-	 * Q0 = Q1 =/= Q2 = Q3 		Q0 =/= Q1 = Q2 = Q3 	Q0 = Q1 = Q2 = Q3
-	 * {						{						{
-	 *     {0, 1},             		{0},            	 	{0, 1, 2, 3}
-	 *     {2, 3}              		{1, 2, 3}       	}
-	 * }                    	}
-	 *
+     * <pre>
+     * Q0 = Q1 =/= Q2 = Q3      Q0 =/= Q1 = Q2 = Q3      Q0 = Q1 = Q2 = Q3
+     * {                        {                        {
+     *     {0, 1},                     {0},                     {0, 1, 2, 3}
+     *     {2, 3}                      {1, 2, 3}         }
+     * }                        }
+     * </pre>
 	 *
 	 * @return An Array List of partitions where each partition contains identical quadrants.
 	 */
