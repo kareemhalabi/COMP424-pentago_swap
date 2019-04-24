@@ -345,7 +345,7 @@ public class PentagoBitBoard {
 					byte[][] swapsQ0 = new byte[4][2];
 					int initialCapacityQ0 = (QUAD_SIZE * QUAD_SIZE) * swaps.length;
 
-					Q0 = equalQuadrants.get(0).get(0);
+					Q0 = uniqueQuadrant.get(0);
 
 					// Generate first 3 swaps
 					for(int i = 0; i < identicalQuadrants.size(); i++) {
@@ -514,6 +514,8 @@ public class PentagoBitBoard {
 	private void updateWinner() {
 		boolean playerWin = checkWin(this.turnPlayer);
 		boolean otherWin = checkWin((byte) (1 - this.turnPlayer));
+		
+		this.winner = NOBODY;
 
 		if (playerWin) { // Current player has won
 			this.winner = otherWin ? DRAW : this.turnPlayer;
