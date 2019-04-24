@@ -514,6 +514,8 @@ public class PentagoBitBoard {
 	private void updateWinner() {
 		boolean playerWin = checkWin(this.turnPlayer);
 		boolean otherWin = checkWin((byte) (1 - this.turnPlayer));
+		
+		this.winner = NOBODY;
 
 		if (playerWin) { // Current player has won
 			this.winner = otherWin ? DRAW : this.turnPlayer;
